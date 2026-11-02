@@ -5,7 +5,7 @@ import bcrypt
 import hashlib
 import secrets
 import uuid
-from jose import JWTError, jwt
+from jose import jwt  # type: ignore[import-untyped]
 
 from app.core.config import settings
 

@@ -2,7 +2,6 @@
 import pytest
 from httpx import AsyncClient
 
-from app.core.security import create_access_token
 
 
 @pytest.mark.asyncio

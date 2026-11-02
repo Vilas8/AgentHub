@@ -1,7 +1,6 @@
 """Implementations of initial allowlisted tools for AgentHub."""
 import datetime
 import math
-import re
 from typing import Any
 from app.modules.tools.registry import ToolDefinition, ToolRisk, tool_registry
 

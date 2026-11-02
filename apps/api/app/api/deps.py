@@ -2,12 +2,12 @@
 from fastapi import Depends, HTTPException, status, Cookie, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from jose import JWTError, ExpiredSignatureError
+from jose import JWTError, ExpiredSignatureError  # type: ignore[import-untyped]
 import structlog
 
 from app.database.base import get_db
 from app.core.security import decode_token, verify_csrf_token
-from app.models.user import User, UserRole
+from app.models.user import User
 
 logger = structlog.get_logger(__name__)
 

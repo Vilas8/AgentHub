@@ -57,7 +57,7 @@ async def test_entitlement_blocks_unpaid_execution(client: AsyncClient, db: Asyn
         "input_data": {"query": "Analyze financial report"},
     })
     assert exec_res2.status_code == 201
-    execution_id = exec_res2.json()["id"]
+    assert "id" in exec_res2.json()
 
     # 4. Immediate second run without buying again -> 402 Payment Required (purchase was consumed)!
     exec_res3 = await client.post("/api/v1/executions/", json={

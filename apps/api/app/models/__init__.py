@@ -14,11 +14,11 @@ from app.models.audit import AuditLog
 
 __all__ = [
     "TimestampMixin", "UUIDMixin",
-    "User", "UserRole", "UserProfile",
+    "User", "UserRole", "UserProfile", "RefreshToken",
     "Organization", "OrganizationMember", "MemberRole",
     "Category",
-    "Agent", "AgentVersion", "AgentStatus", "AgentVisibility",
-    "Execution", "ExecutionStatus", "ExecutionStep",
+    "Agent", "AgentVersion", "AgentStatus", "AgentVisibility", "AgentReview", "AgentBookmark",
+    "Execution", "ExecutionStatus", "ExecutionStep", "ExecutionApproval", "ApprovalStatus",
     "Plan", "Subscription", "Purchase", "PaymentTransaction",
     "CreatorBalance", "CreatorLedgerEntry", "CommissionRule",
     "Notification",

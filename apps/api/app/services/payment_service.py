@@ -173,12 +173,20 @@ class StripePaymentProvider(PaymentProvider):
         )
         return {"session_id": session.id, "checkout_url": session.url, "provider": "stripe"}
 
-    async def verify_payment(self, payment_id: str, signature: str | None = None) -> bool:
+    async def verify_payment(
+        self,
+        payment_id: str | None = None,
+        order_id: str | None = None,
+        signature: str | None = None,
+        **kwargs: Any,
+    ) -> bool:
+        if not payment_id:
+            return False
         import stripe  # type: ignore
         stripe.api_key = settings.STRIPE_SECRET_KEY
         try:
             pi = await stripe.PaymentIntent.retrieve_async(payment_id)
-            return pi.status == "succeeded"
+            return bool(pi.status == "succeeded")
         except Exception:
             return False
 

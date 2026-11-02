@@ -205,7 +205,8 @@ class AnthropicAdapter(ModelAdapter):
                 messages=[{"role": "user", "content": user_message}],
                 max_tokens=max_tokens,
             )
-            content = response.content[0].text if response.content else ""
+            first_block = response.content[0] if response.content else None
+            content = getattr(first_block, "text", "") if first_block else ""
             in_tok = response.usage.input_tokens
             out_tok = response.usage.output_tokens
             return ModelResponse(
@@ -233,7 +234,8 @@ class AnthropicAdapter(ModelAdapter):
                 messages=[{"role": "user", "content": user_message}],
                 max_tokens=max_tokens,
             )
-            content = response.content[0].text if response.content else ""
+            first_block = response.content[0] if response.content else None
+            content = getattr(first_block, "text", "") if first_block else ""
             return ModelResponse(
                 content=content,
                 input_tokens=response.usage.input_tokens,

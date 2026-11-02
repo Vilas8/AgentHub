@@ -6,7 +6,7 @@ import json
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, async_sessionmaker
@@ -104,9 +104,13 @@ class ExecutionService:
     async def run_execution(self, execution_id: str) -> None:
         """Background task that runs the actual agent execution."""
         bind = self.db.get_bind()
-        if not isinstance(bind, AsyncEngine):
-            bind = AsyncEngine(bind)
-        session_factory = async_sessionmaker(bind, class_=AsyncSession, expire_on_commit=False)
+        if isinstance(bind, AsyncEngine):
+            engine: AsyncEngine = bind
+        elif hasattr(bind, "engine"):
+            engine = AsyncEngine(bind.engine)
+        else:
+            engine = AsyncEngine(bind)  # type: ignore[arg-type]
+        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
         cancel_ev = _cancellation_events.get(execution_id)
 
@@ -374,7 +378,7 @@ class ExecutionService:
             return
 
         # 3. Subscribe to real-time events
-        queue = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         if execution_id not in _execution_subscribers:
             _execution_subscribers[execution_id] = set()
         _execution_subscribers[execution_id].add(queue)

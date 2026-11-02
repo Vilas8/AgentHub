@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import enum
 from typing import Any, Callable, Coroutine
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ToolRisk(str, enum.Enum):

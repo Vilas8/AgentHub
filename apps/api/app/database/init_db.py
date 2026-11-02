@@ -58,7 +58,7 @@ async def init_db(db: AsyncSession) -> None:
             cat_map[slug] = c
 
     # Check 5 Platform Agents
-    agent_check = await db.execute(select(Agent).where(Agent.is_platform_owned == True))
+    agent_check = await db.execute(select(Agent).where(Agent.is_platform_owned.is_(True)))
     if agent_check.scalars().first():
         logger.info("Platform agents already seeded.")
         await db.commit()
@@ -146,9 +146,10 @@ async def init_db(db: AsyncSession) -> None:
     ]
 
     for a_data in initial_agents:
-        cat = cat_map.get(a_data["category_slug"])
+        cat_slug = str(a_data["category_slug"])
+        cat = cat_map.get(cat_slug)
         agent = Agent(
-            creator_id=admin.id,
+            creator_id=admin.id if admin else "platform-admin",
             category_id=cat.id if cat else None,
             name=a_data["name"],
             slug=a_data["slug"],

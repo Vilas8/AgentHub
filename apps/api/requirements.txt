@@ -34,7 +34,7 @@ langchain-ollama==0.2.2
 tiktoken==0.8.0
 
 # Storage
-boto3==1.35.88
+boto3==1.35.36
 aiobotocore==2.15.2
 
 # Utilities
@@ -54,4 +54,4 @@ factory-boy==3.3.1
 
 # Linting
 ruff==0.8.4
-mypy==1.13.3
+mypy==1.13.0

@@ -1,5 +1,4 @@
 """Execution routes."""
-import uuid
 from fastapi import APIRouter, Depends, Header, HTTPException, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,8 +6,8 @@ from sqlalchemy import select
 
 from app.database.base import get_db
 from app.models.user import User
-from app.models.agent import Agent, AgentStatus, AgentVisibility
-from app.models.execution import Execution, ExecutionStatus
+from app.models.agent import Agent
+from app.models.execution import Execution
 from app.schemas.execution import CreateExecutionRequest, ExecutionResponse
 from app.schemas.common import SuccessResponse
 from app.api.deps import get_current_active_user

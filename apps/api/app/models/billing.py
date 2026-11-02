@@ -1,6 +1,6 @@
 """Billing and financial models. All amounts in minor currency units (integer)."""
 import enum
-from sqlalchemy import Boolean, Enum, Integer, JSON, String, Text, ForeignKey, Numeric
+from sqlalchemy import Boolean, Enum, Integer, JSON, String, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base

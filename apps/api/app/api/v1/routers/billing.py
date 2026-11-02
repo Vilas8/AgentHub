@@ -1,12 +1,11 @@
 """Billing and payment routes."""
-import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database.base import get_db
 from app.models.user import User
-from app.models.agent import Agent, AgentStatus
+from app.models.agent import Agent
 from app.models.billing import (
     CheckoutSession,
     CheckoutSessionStatus,
@@ -17,7 +16,6 @@ from app.models.billing import (
     Purchase,
     TransactionStatus,
 )
-from app.schemas.common import SuccessResponse
 from app.api.deps import get_current_active_user, get_current_creator
 from app.services.payment_service import get_payment_provider
 from app.services.billing_service import BillingService
@@ -98,7 +96,7 @@ async def create_checkout_session(
         amount_minor = agent.price_per_execution
         description = f"Execution access for agent: {agent.name}"
     elif plan_id:
-        plan_res = await db.execute(select(Plan).where(Plan.id == plan_id, Plan.is_active == True))
+        plan_res = await db.execute(select(Plan).where(Plan.id == plan_id, Plan.is_active.is_(True)))
         plan = plan_res.scalar_one_or_none()
         if not plan:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found or inactive")
@@ -109,8 +107,8 @@ async def create_checkout_session(
         if credit_tier not in CREDIT_TIERS:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid credit tier. Choose from {list(CREDIT_TIERS.keys())}")
         tier_data = CREDIT_TIERS[credit_tier]
-        amount_minor = tier_data["amount_minor"]
-        description = tier_data["name"]
+        amount_minor = int(str(tier_data["amount_minor"]))
+        description = str(tier_data["name"])
     else:
         # Client must provide a valid target
         raise HTTPException(

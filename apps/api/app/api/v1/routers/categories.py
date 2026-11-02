@@ -13,7 +13,7 @@ router = APIRouter()
 @router.get("/", response_model=list[CategoryResponse])
 async def list_categories(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(Category).where(Category.is_active == True).order_by(Category.sort_order)
+        select(Category).where(Category.is_active.is_(True)).order_by(Category.sort_order)
     )
     cats = result.scalars().all()
     return [CategoryResponse.model_validate(c) for c in cats]

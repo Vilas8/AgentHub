@@ -1,5 +1,4 @@
 """AgentHub FastAPI application entry point."""
-import asyncio
 from contextlib import asynccontextmanager
 
 import structlog
@@ -13,6 +12,7 @@ from app.database.base import engine, Base
 from app.middleware.correlation import CorrelationIdMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.api.v1.router import api_router
+from app.api.v1.routers.health import router as health_router
 
 configure_logging()
 logger = structlog.get_logger(__name__)
@@ -70,8 +70,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"error": "Internal server error", "detail": "An unexpected error occurred."},
     )
 
-
-from app.api.v1.routers.health import router as health_router
 
 app.include_router(health_router, tags=["health"])
 app.include_router(api_router)

@@ -49,7 +49,7 @@ class EntitlementService:
                     Purchase.user_id == user.id,
                     Purchase.agent_id == agent.id,
                     Purchase.status == TransactionStatus.COMPLETED,
-                    Purchase.execution_id == None,
+                    Purchase.execution_id.is_(None),
                 )
                 .order_by(Purchase.created_at.asc())
             )
@@ -74,7 +74,7 @@ class EntitlementService:
             sub_stmt = select(Subscription).where(
                 Subscription.user_id == user.id,
                 Subscription.status == SubscriptionStatus.ACTIVE,
-                (Subscription.agent_id == agent.id) | (Subscription.agent_id == None),
+                (Subscription.agent_id == agent.id) | (Subscription.agent_id.is_(None)),
             )
             sub_res = await self.db.execute(sub_stmt)
             subscription = sub_res.scalars().first()

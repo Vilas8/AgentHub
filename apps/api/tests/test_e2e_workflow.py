@@ -12,11 +12,8 @@ End-to-End Workflow Tests:
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.models.user import User, UserRole
-from app.models.agent import Agent, AgentStatus, AgentVisibility
-from app.models.execution import Execution, ExecutionStatus
 from app.core.security import hash_password, create_access_token
 from app.modules.tools.registry import tool_registry
 

@@ -2,8 +2,6 @@
 Billing service — commission calculation and ledger management.
 All amounts in integer minor currency units (e.g. cents/paise).
 """
-import uuid
-from decimal import Decimal
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -20,7 +18,7 @@ class BillingService:
     async def get_commission_rule(self, agent_id: str | None = None) -> CommissionRule:
         """Get the applicable commission rule. Returns default if no agent-specific rule."""
         result = await self.db.execute(
-            select(CommissionRule).where(CommissionRule.is_default == True, CommissionRule.is_active == True)
+            select(CommissionRule).where(CommissionRule.is_default.is_(True), CommissionRule.is_active.is_(True))
         )
         rule = result.scalar_one_or_none()
         if not rule:
