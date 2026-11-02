@@ -1,7 +1,7 @@
 """Application configuration loaded from environment variables."""
 from functools import lru_cache
 from typing import Literal
-from pydantic import AnyUrl, field_validator
+from pydantic import AnyUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -74,6 +74,23 @@ class Settings(BaseSettings):
         if len(v) < 16:
             raise ValueError("Secret key must be at least 16 characters")
         return v
+
+    @model_validator(mode="after")
+    def validate_production_requirements(self):
+        if self.APP_ENV == "production":
+            insecure_defaults = [
+                "dev-secret-key-change-in-production",
+                "change-me-minimum-32-chars-random-secret",
+                "dev-jwt-secret-change-in-production",
+                "change-me-jwt-secret-minimum-32-chars",
+            ]
+            if self.SECRET_KEY in insecure_defaults or len(self.SECRET_KEY) < 32:
+                raise ValueError("SECRET_KEY must be a cryptographically secure random string of at least 32 characters in production.")
+            if self.JWT_SECRET_KEY in insecure_defaults or len(self.JWT_SECRET_KEY) < 32:
+                raise ValueError("JWT_SECRET_KEY must be a cryptographically secure random string of at least 32 characters in production.")
+            if self.PAYMENT_PROVIDER == "simulator":
+                raise ValueError("PAYMENT_PROVIDER cannot be 'simulator' in production mode.")
+        return self
 
     @property
     def is_production(self) -> bool:

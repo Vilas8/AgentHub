@@ -13,22 +13,26 @@ logger = structlog.get_logger(__name__)
 
 async def init_db(db: AsyncSession) -> None:
     """Seed initial data if tables are empty."""
-    # Check if admin user exists
-    result = await db.execute(select(User).where(User.email == "admin@agenthub.example"))
+    # Seed super admin only in non-production environments with a generated or explicit secret
+    from app.core.config import settings
+    result = await db.execute(select(User).where(User.role == UserRole.SUPER_ADMIN))
     admin = result.scalar_one_or_none()
 
     if not admin:
-        logger.info("Seeding super admin...")
-        admin = User(
-            email="admin@agenthub.example",
-            hashed_password=hash_password("Admin@AgentHub1"),
-            full_name="Platform Admin",
-            role=UserRole.SUPER_ADMIN,
-            is_active=True,
-            is_verified=True,
-        )
-        db.add(admin)
-        await db.flush()
+        if settings.is_production:
+            logger.warning("Production environment detected. Admin account creation skipped. Run bootstrap_admin CLI to initialize platform administrator.")
+        else:
+            logger.info("Seeding development super admin...")
+            admin = User(
+                email="admin@agenthub.example",
+                hashed_password=hash_password("DevAdmin@AgentHub2026!"),
+                full_name="Platform Admin",
+                role=UserRole.SUPER_ADMIN,
+                is_active=True,
+                is_verified=True,
+            )
+            db.add(admin)
+            await db.flush()
 
     # Check categories
     cat_res = await db.execute(select(Category))

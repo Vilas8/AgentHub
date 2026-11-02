@@ -1,10 +1,13 @@
 """Public marketplace routes."""
-from fastapi import APIRouter, Depends, Query
+import math
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 
+from app.api.deps import get_current_active_user
 from app.database.base import get_db
-from app.models.agent import Agent, AgentStatus, AgentVisibility
+from app.models.agent import Agent, AgentBookmark, AgentReview, AgentStatus, AgentVisibility
+from app.models.user import User
 from app.schemas.agent import AgentResponse
 from app.schemas.common import PaginatedResponse
 
@@ -52,7 +55,6 @@ async def list_marketplace_agents(
     result = await db.execute(query)
     agents = result.scalars().all()
 
-    import math
     return PaginatedResponse(
         items=[AgentResponse.model_validate(a) for a in agents],
         total=total,
@@ -64,7 +66,6 @@ async def list_marketplace_agents(
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse)
 async def get_marketplace_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
-    from fastapi import HTTPException
     result = await db.execute(
         select(Agent).where(
             Agent.id == agent_id,
@@ -74,13 +75,12 @@ async def get_marketplace_agent(agent_id: str, db: AsyncSession = Depends(get_db
     )
     agent = result.scalar_one_or_none()
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
     return AgentResponse.model_validate(agent)
 
 
 @router.get("/agents/{agent_id}/reviews")
 async def list_agent_reviews(agent_id: str, db: AsyncSession = Depends(get_db)):
-    from app.models.agent import AgentReview
     result = await db.execute(
         select(AgentReview).where(AgentReview.agent_id == agent_id).order_by(AgentReview.created_at.desc()).limit(50)
     )
@@ -88,6 +88,7 @@ async def list_agent_reviews(agent_id: str, db: AsyncSession = Depends(get_db)):
     return [
         {
             "id": r.id,
+            "user_id": r.user_id,
             "rating": r.rating,
             "comment": r.comment,
             "created_at": r.created_at.isoformat(),
@@ -96,64 +97,132 @@ async def list_agent_reviews(agent_id: str, db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.post("/agents/{agent_id}/reviews")
+@router.post("/agents/{agent_id}/reviews", status_code=status.HTTP_201_CREATED)
 async def create_agent_review(
     agent_id: str,
     payload: dict,
-    user=Depends(lambda: None),
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from fastapi import HTTPException
-    from app.models.agent import AgentReview
-    from app.api.deps import get_current_active_user
-    
-    # Authenticate user
-    current_user = await get_current_active_user(user) if user else None
-    user_id = current_user.id if current_user else "anonymous"
+    # Verify agent exists and is publicly accessible
+    agent_res = await db.execute(
+        select(Agent).where(
+            Agent.id == agent_id,
+            Agent.status == AgentStatus.APPROVED,
+            Agent.visibility == AgentVisibility.PUBLIC,
+        )
+    )
+    agent = agent_res.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent not found or not available for review",
+        )
 
-    rating = int(payload.get("rating", 5))
+    # Enforce one review per user per agent
+    existing_rev = await db.execute(
+        select(AgentReview).where(
+            AgentReview.agent_id == agent_id,
+            AgentReview.user_id == current_user.id,
+        )
+    )
+    if existing_rev.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You have already submitted a review for this agent",
+        )
+
+    try:
+        rating = int(payload.get("rating", 5))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be an integer between 1 and 5")
+
     if not 1 <= rating <= 5:
-        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5")
+
+    comment = str(payload.get("comment", "")).strip()[:1000]
 
     review = AgentReview(
         agent_id=agent_id,
-        user_id=user_id,
+        user_id=current_user.id,
         rating=rating,
-        comment=payload.get("comment", ""),
+        comment=comment,
     )
     db.add(review)
+    await db.flush()
 
-    # Recalculate average rating
-    all_revs = await db.execute(select(AgentReview.rating).where(AgentReview.agent_id == agent_id))
-    ratings = all_revs.scalars().all()
-    ratings.append(rating)
-    new_avg = sum(ratings) / len(ratings)
+    # Recalculate average rating & review count using DB aggregates
+    stats_query = select(
+        func.count(AgentReview.id),
+        func.avg(AgentReview.rating),
+    ).where(AgentReview.agent_id == agent_id)
+    count, avg_rating = (await db.execute(stats_query)).one()
 
-    agent_res = await db.execute(select(Agent).where(Agent.id == agent_id))
-    agent = agent_res.scalar_one_or_none()
-    if agent:
-        agent.average_rating = round(new_avg, 2)
-        agent.review_count = len(ratings)
+    agent.review_count = count or 0
+    agent.average_rating = round(float(avg_rating), 2) if avg_rating is not None else 0.0
 
     await db.commit()
-    return {"message": "Review submitted successfully", "average_rating": agent.average_rating if agent else rating}
+    await db.refresh(review)
+
+    return {
+        "id": review.id,
+        "agent_id": agent.id,
+        "rating": review.rating,
+        "comment": review.comment,
+        "average_rating": agent.average_rating,
+        "review_count": agent.review_count,
+        "message": "Review submitted successfully",
+    }
 
 
 @router.post("/agents/{agent_id}/bookmark")
 async def toggle_bookmark(
     agent_id: str,
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.models.agent import AgentBookmark
-    # Toggle bookmark
-    result = await db.execute(select(AgentBookmark).where(AgentBookmark.agent_id == agent_id))
+    # Verify agent exists
+    agent_res = await db.execute(
+        select(Agent).where(
+            Agent.id == agent_id,
+            Agent.status == AgentStatus.APPROVED,
+            Agent.visibility == AgentVisibility.PUBLIC,
+        )
+    )
+    agent = agent_res.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+
+    result = await db.execute(
+        select(AgentBookmark).where(
+            AgentBookmark.agent_id == agent_id,
+            AgentBookmark.user_id == current_user.id,
+        )
+    )
     existing = result.scalar_one_or_none()
     if existing:
         await db.delete(existing)
         await db.commit()
         return {"bookmarked": False, "message": "Bookmark removed"}
-    else:
-        bm = AgentBookmark(agent_id=agent_id, user_id="guest-or-user")
-        db.add(bm)
-        await db.commit()
-        return {"bookmarked": True, "message": "Agent saved to bookmarks"}
+
+    bm = AgentBookmark(agent_id=agent_id, user_id=current_user.id)
+    db.add(bm)
+    await db.commit()
+    return {"bookmarked": True, "message": "Agent saved to bookmarks"}
+
+
+@router.get("/bookmarks")
+async def list_user_bookmarks(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(Agent)
+        .join(AgentBookmark, AgentBookmark.agent_id == Agent.id)
+        .where(AgentBookmark.user_id == current_user.id)
+        .order_by(AgentBookmark.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    agents = result.scalars().all()
+    return [AgentResponse.model_validate(a) for a in agents]
+

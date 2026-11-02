@@ -1,6 +1,6 @@
 """Agent registry models."""
 import enum
-from sqlalchemy import Boolean, Enum, Integer, JSON, String, Text, ForeignKey, Numeric
+from sqlalchemy import Boolean, Enum, Integer, JSON, String, Text, ForeignKey, Numeric, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -59,6 +59,9 @@ class Agent(Base, UUIDMixin, TimestampMixin):
 class AgentVersion(Base, UUIDMixin, TimestampMixin):
     """Immutable snapshot of agent configuration at a point in time."""
     __tablename__ = "agent_versions"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "version_number", name="uq_agent_version_number"),
+    )
 
     agent_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
@@ -84,6 +87,9 @@ class AgentVersion(Base, UUIDMixin, TimestampMixin):
 
 class AgentReview(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "agent_reviews"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "user_id", name="uq_agent_reviews_user"),
+    )
 
     agent_id: Mapped[str] = mapped_column(String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -93,6 +99,9 @@ class AgentReview(Base, UUIDMixin, TimestampMixin):
 
 class AgentBookmark(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "agent_bookmarks"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "user_id", name="uq_agent_bookmarks_user"),
+    )
 
     agent_id: Mapped[str] = mapped_column(String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

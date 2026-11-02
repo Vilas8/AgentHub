@@ -78,3 +78,14 @@ class ExecutionApproval(Base, UUIDMixin, TimestampMixin):
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[ApprovalStatus] = mapped_column(Enum(ApprovalStatus), default=ApprovalStatus.PENDING, nullable=False, index=True)
     decision_at: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+
+class ExecutionEvent(Base, UUIDMixin, TimestampMixin):
+    """Persistent execution event stream log for replay and SSE recovery."""
+    __tablename__ = "execution_events"
+
+    execution_id: Mapped[str] = mapped_column(String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False, index=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+

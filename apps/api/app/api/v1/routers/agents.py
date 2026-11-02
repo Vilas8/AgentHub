@@ -8,8 +8,14 @@ from sqlalchemy import select
 from app.database.base import get_db
 from app.models.user import User
 from app.models.agent import Agent, AgentVersion, AgentStatus, AgentVisibility
-from app.schemas.agent import CreateAgentRequest, UpdateAgentRequest, AgentVersionRequest, AgentResponse
-from app.schemas.common import PaginatedResponse, SuccessResponse
+from app.schemas.agent import (
+    CreateAgentRequest,
+    UpdateAgentRequest,
+    AgentVersionRequest,
+    AgentVersionResponse,
+    AgentResponse,
+)
+from app.schemas.common import SuccessResponse
 from app.api.deps import get_current_active_user, get_current_creator
 
 router = APIRouter()
@@ -34,12 +40,17 @@ async def list_my_agents(
     return [AgentResponse.model_validate(a) for a in agents]
 
 
-@router.post("/", response_model=AgentResponse, status_code=201)
+@router.post("/", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
 async def create_agent(
     data: CreateAgentRequest,
     user: User = Depends(get_current_creator),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        vis = AgentVisibility(data.visibility)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid visibility: {data.visibility}")
+
     agent = Agent(
         creator_id=user.id,
         name=data.name,
@@ -51,10 +62,25 @@ async def create_agent(
         tags=data.tags,
         pricing_type=data.pricing_type,
         price_per_execution=data.price_per_execution or 0,
-        visibility=AgentVisibility(data.visibility),
+        visibility=vis,
         status=AgentStatus.DRAFT,
     )
     db.add(agent)
+    await db.flush()  # assign agent.id
+
+    # Transactional initial version creation
+    initial_prompt = data.system_prompt or f"You are {data.name}, an expert AI assistant."
+    version = AgentVersion(
+        agent_id=agent.id,
+        version_number=1,
+        system_prompt=initial_prompt,
+        objective=data.short_description or data.description,
+        model_provider=data.model_provider,
+        model_name=data.model_name,
+        tools_config=data.tools_config or {},
+    )
+    db.add(version)
+
     await db.commit()
     await db.refresh(agent)
     return AgentResponse.model_validate(agent)
@@ -69,11 +95,12 @@ async def get_agent(
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    # Only creator or admin can see non-public agents
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    
+    # Non-admin non-creator can only view approved public agents
     if agent.creator_id != user.id and not user.is_admin:
         if agent.visibility != AgentVisibility.PUBLIC or agent.status != AgentStatus.APPROVED:
-            raise HTTPException(status_code=403, detail="Access denied")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return AgentResponse.model_validate(agent)
 
 
@@ -87,11 +114,22 @@ async def update_agent(
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
     if agent.creator_id != user.id and not user.is_admin:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this agent")
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    updates = data.model_dump(exclude_none=True)
+    if not updates:
+        return AgentResponse.model_validate(agent)
+
+    # Protect status transitions and visibility rules
+    if "visibility" in updates:
+        try:
+            updates["visibility"] = AgentVisibility(updates["visibility"])
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid visibility")
+
+    for field, value in updates.items():
         setattr(agent, field, value)
 
     await db.commit()
@@ -99,7 +137,27 @@ async def update_agent(
     return AgentResponse.model_validate(agent)
 
 
-@router.post("/{agent_id}/versions", status_code=201)
+@router.get("/{agent_id}/versions", response_model=list[AgentVersionResponse])
+async def list_agent_versions(
+    agent_id: str,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Agent).where(Agent.id == agent_id))
+    agent = result.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    if agent.creator_id != user.id and not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    v_result = await db.execute(
+        select(AgentVersion).where(AgentVersion.agent_id == agent_id).order_by(AgentVersion.version_number.desc())
+    )
+    versions = v_result.scalars().all()
+    return [AgentVersionResponse.model_validate(v) for v in versions]
+
+
+@router.post("/{agent_id}/versions", status_code=status.HTTP_201_CREATED)
 async def create_agent_version(
     agent_id: str,
     data: AgentVersionRequest,
@@ -109,11 +167,11 @@ async def create_agent_version(
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
     if agent.creator_id != user.id and not user.is_admin:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this agent")
 
-    # Get next version number
+    # Immutable versions: each new version gets next sequence number
     existing = await db.execute(
         select(AgentVersion).where(AgentVersion.agent_id == agent_id).order_by(AgentVersion.version_number.desc())
     )
@@ -140,12 +198,13 @@ async def submit_for_review(
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    if agent.creator_id != user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    if agent.creator_id != user.id and not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this agent")
     if agent.status not in (AgentStatus.DRAFT, AgentStatus.REJECTED):
-        raise HTTPException(status_code=400, detail=f"Cannot submit agent in '{agent.status}' status")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot submit agent in '{agent.status}' status")
 
     agent.status = AgentStatus.PENDING_REVIEW
     await db.commit()
     return SuccessResponse(message="Agent submitted for review")
+

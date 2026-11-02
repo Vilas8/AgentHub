@@ -1,6 +1,7 @@
 """User identity models."""
 import enum
-from sqlalchemy import Boolean, Enum, String, Text, ForeignKey
+from datetime import datetime
+from sqlalchemy import Boolean, Enum, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -60,3 +61,14 @@ class UserProfile(Base, UUIDMixin, TimestampMixin):
     creator_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="profile")
+
+
+class RefreshToken(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "refresh_tokens"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

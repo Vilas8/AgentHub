@@ -1,6 +1,6 @@
 """SQLAlchemy models package."""
 from app.models.base import TimestampMixin, UUIDMixin
-from app.models.user import User, UserRole, UserProfile
+from app.models.user import User, UserRole, UserProfile, RefreshToken
 from app.models.organization import Organization, OrganizationMember, MemberRole
 from app.models.category import Category
 from app.models.agent import Agent, AgentVersion, AgentStatus, AgentVisibility, AgentReview, AgentBookmark

@@ -35,7 +35,7 @@ export function CreatorSection() {
             </Link>
           </div>
           <div className="rounded-xl border border-border bg-muted/30 p-8">
-            <p className="text-sm font-mono text-muted-foreground mb-4">// Creator earnings example</p>
+            <p className="text-sm font-mono text-muted-foreground mb-4">{"// Creator earnings example"}</p>
             <div className="space-y-3 text-sm font-mono">
               <div className="flex justify-between"><span className="text-muted-foreground">Monthly executions</span><span className="text-foreground font-semibold">2,400</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Price per execution</span><span className="text-foreground font-semibold">$0.50</span></div>

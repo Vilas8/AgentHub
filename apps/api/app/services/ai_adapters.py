@@ -18,6 +18,30 @@ from app.core.config import settings
 logger = structlog.get_logger(__name__)
 
 
+class ModelProviderError(Exception):
+    """Base exception for model provider errors."""
+    def __init__(self, message: str, provider: str, status_code: int = 502, retryable: bool = False):
+        super().__init__(message)
+        self.provider = provider
+        self.status_code = status_code
+        self.retryable = retryable
+
+
+class ModelAuthenticationError(ModelProviderError):
+    def __init__(self, message: str, provider: str):
+        super().__init__(message, provider, status_code=401, retryable=False)
+
+
+class ModelRateLimitError(ModelProviderError):
+    def __init__(self, message: str, provider: str):
+        super().__init__(message, provider, status_code=429, retryable=True)
+
+
+class ModelContextLengthError(ModelProviderError):
+    def __init__(self, message: str, provider: str):
+        super().__init__(message, provider, status_code=400, retryable=False)
+
+
 @dataclass
 class ModelResponse:
     content: str
@@ -26,6 +50,26 @@ class ModelResponse:
     model: str = ""
     provider: str = ""
     finish_reason: str = "stop"
+    estimated_cost_minor: int = 0
+
+
+def estimate_cost_minor(provider: str, model: str, input_tokens: int, output_tokens: int) -> int:
+    """
+    Estimate cost in minor currency units (USD cents) based on standard pricing tiers.
+    E.g. $0.50 per 1M tokens -> ~0.00005 cents per token.
+    """
+    # Flash / 3.5 turbo tier: ~$0.35/1M input, $1.05/1M output
+    # Pro / 4o / Claude 3.5 Sonnet tier: ~$3.00/1M input, $15.00/1M output
+    is_pro = any(p in model.lower() for p in ["pro", "gpt-4", "sonnet", "opus"])
+    if is_pro:
+        cost_usd = (input_tokens * 3.0 / 1_000_000) + (output_tokens * 15.0 / 1_000_000)
+    else:
+        cost_usd = (input_tokens * 0.35 / 1_000_000) + (output_tokens * 1.05 / 1_000_000)
+
+    # Convert to cents (minor unit) rounded up to integer cents (or 1 cent minimum if used)
+    cents = round(cost_usd * 100)
+    return max(0, int(cents))
+
 
 
 class ModelAdapter(ABC):
@@ -63,7 +107,7 @@ class GeminiAdapter(ModelAdapter):
 
     async def complete(self, system_prompt, user_message, model, max_tokens=4096, temperature=0.7, **kwargs) -> ModelResponse:
         if not self.is_available:
-            raise RuntimeError("Gemini API key not configured. Set GEMINI_API_KEY in .env")
+            raise ModelAuthenticationError("Gemini API key not configured. Set GEMINI_API_KEY in .env", "gemini")
         try:
             import google.generativeai as genai  # type: ignore
             genai.configure(api_key=settings.GEMINI_API_KEY)
@@ -78,16 +122,24 @@ class GeminiAdapter(ModelAdapter):
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(None, lambda: client.generate_content(user_message))
             usage = getattr(response, "usage_metadata", None)
+            in_tok = getattr(usage, "prompt_token_count", 0) or 0
+            out_tok = getattr(usage, "candidates_token_count", 0) or 0
             return ModelResponse(
                 content=response.text,
-                input_tokens=getattr(usage, "prompt_token_count", 0),
-                output_tokens=getattr(usage, "candidates_token_count", 0),
+                input_tokens=in_tok,
+                output_tokens=out_tok,
                 model=model,
                 provider="gemini",
+                estimated_cost_minor=estimate_cost_minor("gemini", model, in_tok, out_tok),
             )
         except Exception as e:
-            logger.error("Gemini completion failed", error=str(e))
-            raise
+            err_msg = str(e)
+            logger.error("Gemini completion failed", error=err_msg)
+            if "quota" in err_msg.lower() or "429" in err_msg:
+                raise ModelRateLimitError(f"Gemini rate limit exceeded: {err_msg}", "gemini")
+            if "api_key" in err_msg.lower() or "permission" in err_msg.lower():
+                raise ModelAuthenticationError(f"Gemini authentication failed: {err_msg}", "gemini")
+            raise ModelProviderError(f"Gemini provider error: {err_msg}", "gemini")
 
 
 class OpenAIAdapter(ModelAdapter):
@@ -99,7 +151,7 @@ class OpenAIAdapter(ModelAdapter):
 
     async def complete(self, system_prompt, user_message, model, max_tokens=4096, temperature=0.7, **kwargs) -> ModelResponse:
         if not self.is_available:
-            raise RuntimeError("OpenAI API key not configured. Set OPENAI_API_KEY in .env")
+            raise ModelAuthenticationError("OpenAI API key not configured. Set OPENAI_API_KEY in .env", "openai")
         try:
             from openai import AsyncOpenAI  # type: ignore
             client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
@@ -113,17 +165,25 @@ class OpenAIAdapter(ModelAdapter):
                 temperature=temperature,
             )
             choice = response.choices[0]
+            in_tok = response.usage.prompt_tokens if response.usage else 0
+            out_tok = response.usage.completion_tokens if response.usage else 0
             return ModelResponse(
                 content=choice.message.content or "",
-                input_tokens=response.usage.prompt_tokens if response.usage else 0,
-                output_tokens=response.usage.completion_tokens if response.usage else 0,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
                 model=model,
                 provider="openai",
                 finish_reason=choice.finish_reason or "stop",
+                estimated_cost_minor=estimate_cost_minor("openai", model, in_tok, out_tok),
             )
         except Exception as e:
-            logger.error("OpenAI completion failed", error=str(e))
-            raise
+            err_msg = str(e)
+            logger.error("OpenAI completion failed", error=err_msg)
+            if "rate_limit" in err_msg.lower() or "429" in err_msg:
+                raise ModelRateLimitError(f"OpenAI rate limit exceeded: {err_msg}", "openai")
+            if "auth" in err_msg.lower() or "api_key" in err_msg.lower() or "401" in err_msg:
+                raise ModelAuthenticationError(f"OpenAI authentication failed: {err_msg}", "openai")
+            raise ModelProviderError(f"OpenAI provider error: {err_msg}", "openai")
 
 
 class AnthropicAdapter(ModelAdapter):
@@ -135,9 +195,37 @@ class AnthropicAdapter(ModelAdapter):
 
     async def complete(self, system_prompt, user_message, model, max_tokens=4096, temperature=0.7, **kwargs) -> ModelResponse:
         if not self.is_available:
-            raise RuntimeError("Anthropic API key not configured. Set ANTHROPIC_API_KEY in .env")
+            raise ModelAuthenticationError("Anthropic API key not configured. Set ANTHROPIC_API_KEY in .env", "anthropic")
         try:
             import anthropic  # type: ignore
+            client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+            response = await client.messages.create(
+                model=model,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+                max_tokens=max_tokens,
+            )
+            content = response.content[0].text if response.content else ""
+            in_tok = response.usage.input_tokens
+            out_tok = response.usage.output_tokens
+            return ModelResponse(
+                content=content,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                model=model,
+                provider="anthropic",
+                finish_reason=response.stop_reason or "stop",
+                estimated_cost_minor=estimate_cost_minor("anthropic", model, in_tok, out_tok),
+            )
+        except Exception as e:
+            err_msg = str(e)
+            logger.error("Anthropic completion failed", error=err_msg)
+            if "rate_limit" in err_msg.lower() or "429" in err_msg:
+                raise ModelRateLimitError(f"Anthropic rate limit exceeded: {err_msg}", "anthropic")
+            if "authentication" in err_msg.lower() or "401" in err_msg:
+                raise ModelAuthenticationError(f"Anthropic authentication failed: {err_msg}", "anthropic")
+            raise ModelProviderError(f"Anthropic provider error: {err_msg}", "anthropic")
+
             client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
             response = await client.messages.create(
                 model=model,

@@ -27,6 +27,34 @@ class TransactionStatus(str, enum.Enum):
     REFUNDED = "refunded"
 
 
+class CheckoutSessionStatus(str, enum.Enum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    EXPIRED = "expired"
+    FAILED = "failed"
+
+
+class CheckoutSession(Base, UUIDMixin, TimestampMixin):
+    """Server-side checkout session record linking user, item, and payment."""
+    __tablename__ = "checkout_sessions"
+
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    agent_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("agents.id"), nullable=True)
+    plan_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("plans.id"), nullable=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider_session_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    status: Mapped[CheckoutSessionStatus] = mapped_column(
+        Enum(CheckoutSessionStatus),
+        nullable=False,
+        default=CheckoutSessionStatus.PENDING,
+    )
+    expires_at: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    payment_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+
 class Plan(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "plans"
 

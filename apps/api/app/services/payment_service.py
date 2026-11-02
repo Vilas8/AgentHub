@@ -23,7 +23,13 @@ class PaymentProvider(ABC):
         ...
 
     @abstractmethod
-    async def verify_payment(self, payment_id: str, signature: str | None = None) -> bool:
+    async def verify_payment(
+        self,
+        payment_id: str | None = None,
+        order_id: str | None = None,
+        signature: str | None = None,
+        **kwargs: Any,
+    ) -> bool:
         ...
 
     @abstractmethod
@@ -45,6 +51,8 @@ class SimulatorPaymentProvider(PaymentProvider):
     provider_name = "simulator"
 
     async def create_checkout_session(self, amount_minor: int, currency: str, description: str, metadata: dict) -> dict:
+        if settings.is_production:
+            raise RuntimeError("SimulatorPaymentProvider is strictly forbidden in production mode.")
         session_id = f"sim_{uuid.uuid4().hex[:16]}"
         logger.warning(
             "DEVELOPMENT PAYMENT SIMULATOR — no real payment processed",
@@ -61,13 +69,24 @@ class SimulatorPaymentProvider(PaymentProvider):
             "_warning": "DEVELOPMENT ONLY — no real payment",
         }
 
-    async def verify_payment(self, payment_id: str, signature: str | None = None) -> bool:
-        if not payment_id.startswith("sim_"):
+    async def verify_payment(
+        self,
+        payment_id: str | None = None,
+        order_id: str | None = None,
+        signature: str | None = None,
+        **kwargs: Any,
+    ) -> bool:
+        if settings.is_production:
+            raise RuntimeError("SimulatorPaymentProvider is strictly forbidden in production mode.")
+        token = payment_id or order_id or kwargs.get("session_id")
+        if not token or not str(token).startswith("sim_"):
             return False
-        logger.warning("DEVELOPMENT SIMULATOR: payment verified", payment_id=payment_id)
+        logger.warning("DEVELOPMENT SIMULATOR: payment verified", token=token)
         return True
 
     async def handle_webhook(self, payload: bytes, signature: str) -> dict:
+        if settings.is_production:
+            raise RuntimeError("SimulatorPaymentProvider is strictly forbidden in production mode.")
         logger.warning("DEVELOPMENT SIMULATOR: webhook received")
         return {"event": "payment.success", "simulated": True}
 
@@ -96,16 +115,30 @@ class RazorpayPaymentProvider(PaymentProvider):
                 "notes": metadata,
             })
         )
-        return {"session_id": order["id"], "provider": "razorpay", "order": order}
+        return {
+            "session_id": order["id"],
+            "provider": "razorpay",
+            "order": order,
+            "amount_minor": amount_minor,
+            "currency": currency,
+        }
 
-    async def verify_payment(self, payment_id: str, signature: str | None = None) -> bool:
+    async def verify_payment(
+        self,
+        payment_id: str | None = None,
+        order_id: str | None = None,
+        signature: str | None = None,
+        **kwargs: Any,
+    ) -> bool:
         import hmac
         import hashlib
-        if not signature:
+        if not payment_id or not order_id or not signature:
+            logger.warning("Razorpay verification failed: missing payment_id, order_id, or signature")
             return False
+        message = f"{order_id}|{payment_id}"
         expected = hmac.new(
             settings.RAZORPAY_KEY_SECRET.encode(),
-            payment_id.encode(),
+            message.encode(),
             hashlib.sha256,
         ).hexdigest()
         return hmac.compare_digest(expected, signature)

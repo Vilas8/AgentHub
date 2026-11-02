@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Check, X, Shield, Users, Bot, Activity, AlertCircle } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { FooterSection } from "@/components/layout/FooterSection";
@@ -22,20 +22,20 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     setLoading(true);
     Promise.all([
-      api.get<any>("/admin/overview").catch(() => overview),
+      api.get<any>("/admin/overview").catch(() => null),
       api.get<Agent[]>("/admin/agents/pending").catch(() => []),
     ]).then(([stats, pending]) => {
-      setOverview(stats);
+      if (stats) setOverview(stats);
       setPendingAgents(pending);
     }).finally(() => setLoading(false));
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const handleApprove = async (id: string) => {
     try {
