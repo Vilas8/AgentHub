@@ -8,8 +8,10 @@ import { cn } from "@/lib/utils";
 
 const navLinks = [
   { href: "/marketplace", label: "Marketplace" },
-  { href: "/pricing", label: "Pricing" },
-  { href: "/creator", label: "For Creators" },
+  { href: "/creator", label: "Creator Studio" },
+  { href: "/organization", label: "Organization" },
+  { href: "/admin", label: "Admin" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function Navbar() {

@@ -32,5 +32,11 @@ Last updated: 2026-11-02
 - [x] Creator workflow works (create -> version -> submit review)
 - [x] Admin dashboard works (overview telemetry -> approve / reject)
 - [x] Allowlisted tool registry validated with permission scopes and approval gates
+- [x] Human-in-the-loop Execution Approvals Router & UI Gate implemented
+- [x] Marketplace Community Reviews & Ratings submission & display implemented
+- [x] Bookmark & saved agents system implemented
+- [x] Sandbox payment checkout simulator page and verify endpoint implemented
+- [x] Multi-tenant Organization & Team Workspace management page implemented
+- [x] User Account & Platform Settings page implemented
 - [x] 18 backend tests passing with 100% success rate
-- [x] Next.js frontend pages implemented (Home, Marketplace, Agent Detail, Creator Studio, Creator Dashboard, Admin, Auth)
+- [x] Next.js frontend pages implemented (Home, Marketplace, Agent Detail, Creator Studio, Creator Dashboard, Admin, Auth, Organization, Settings, Simulator Checkout)

@@ -80,3 +80,19 @@ class AgentVersion(Base, UUIDMixin, TimestampMixin):
     change_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     agent: Mapped["Agent"] = relationship("Agent", back_populates="versions")
+
+
+class AgentReview(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "agent_reviews"
+
+    agent_id: Mapped[str] = mapped_column(String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False, comment="Rating 1-5")
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AgentBookmark(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "agent_bookmarks"
+
+    agent_id: Mapped[str] = mapped_column(String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

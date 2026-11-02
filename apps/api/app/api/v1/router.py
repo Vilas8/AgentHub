@@ -10,6 +10,7 @@ from app.api.v1.routers import (
     billing,
     admin,
     health,
+    approvals,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -21,5 +22,6 @@ api_router.include_router(categories.router, prefix="/categories", tags=["catego
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(marketplace.router, prefix="/marketplace", tags=["marketplace"])
 api_router.include_router(execution.router, prefix="/executions", tags=["execution"])
+api_router.include_router(approvals.router, prefix="/approvals", tags=["approvals"])
 api_router.include_router(billing.router, prefix="/billing", tags=["billing"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])

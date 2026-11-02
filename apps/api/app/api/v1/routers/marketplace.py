@@ -76,3 +76,84 @@ async def get_marketplace_agent(agent_id: str, db: AsyncSession = Depends(get_db
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return AgentResponse.model_validate(agent)
+
+
+@router.get("/agents/{agent_id}/reviews")
+async def list_agent_reviews(agent_id: str, db: AsyncSession = Depends(get_db)):
+    from app.models.agent import AgentReview
+    result = await db.execute(
+        select(AgentReview).where(AgentReview.agent_id == agent_id).order_by(AgentReview.created_at.desc()).limit(50)
+    )
+    reviews = result.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "rating": r.rating,
+            "comment": r.comment,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in reviews
+    ]
+
+
+@router.post("/agents/{agent_id}/reviews")
+async def create_agent_review(
+    agent_id: str,
+    payload: dict,
+    user=Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
+):
+    from fastapi import HTTPException
+    from app.models.agent import AgentReview
+    from app.api.deps import get_current_active_user
+    
+    # Authenticate user
+    current_user = await get_current_active_user(user) if user else None
+    user_id = current_user.id if current_user else "anonymous"
+
+    rating = int(payload.get("rating", 5))
+    if not 1 <= rating <= 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+    review = AgentReview(
+        agent_id=agent_id,
+        user_id=user_id,
+        rating=rating,
+        comment=payload.get("comment", ""),
+    )
+    db.add(review)
+
+    # Recalculate average rating
+    all_revs = await db.execute(select(AgentReview.rating).where(AgentReview.agent_id == agent_id))
+    ratings = all_revs.scalars().all()
+    ratings.append(rating)
+    new_avg = sum(ratings) / len(ratings)
+
+    agent_res = await db.execute(select(Agent).where(Agent.id == agent_id))
+    agent = agent_res.scalar_one_or_none()
+    if agent:
+        agent.average_rating = round(new_avg, 2)
+        agent.review_count = len(ratings)
+
+    await db.commit()
+    return {"message": "Review submitted successfully", "average_rating": agent.average_rating if agent else rating}
+
+
+@router.post("/agents/{agent_id}/bookmark")
+async def toggle_bookmark(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.agent import AgentBookmark
+    # Toggle bookmark
+    result = await db.execute(select(AgentBookmark).where(AgentBookmark.agent_id == agent_id))
+    existing = result.scalar_one_or_none()
+    if existing:
+        await db.delete(existing)
+        await db.commit()
+        return {"bookmarked": False, "message": "Bookmark removed"}
+    else:
+        bm = AgentBookmark(agent_id=agent_id, user_id="guest-or-user")
+        db.add(bm)
+        await db.commit()
+        return {"bookmarked": True, "message": "Agent saved to bookmarks"}

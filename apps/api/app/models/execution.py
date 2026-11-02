@@ -59,3 +59,22 @@ class ExecutionStep(Base, UUIDMixin, TimestampMixin):
     requires_approval: Mapped[bool] = mapped_column(Boolean, default=False)
 
     execution: Mapped["Execution"] = relationship("Execution", back_populates="steps")
+
+
+class ApprovalStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ExecutionApproval(Base, UUIDMixin, TimestampMixin):
+    __tablename__ = "execution_approvals"
+
+    execution_id: Mapped[str] = mapped_column(String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    action_description: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[ApprovalStatus] = mapped_column(Enum(ApprovalStatus), default=ApprovalStatus.PENDING, nullable=False, index=True)
+    decision_at: Mapped[str | None] = mapped_column(String(50), nullable=True)
