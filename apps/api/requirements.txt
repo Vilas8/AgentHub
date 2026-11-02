@@ -1,0 +1,57 @@
+# Core
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12
+
+# Database
+sqlalchemy[asyncio]==2.0.34
+alembic==1.13.3
+aiosqlite==0.20.0
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+
+# Pydantic
+pydantic==2.10.3
+pydantic-settings==2.6.1
+email-validator==2.2.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+httpx==0.28.1
+
+# Redis / Tasks
+redis[hiredis]==5.2.1
+celery==5.4.0
+
+# AI / LangGraph
+langgraph==0.2.61
+langchain-core==0.3.28
+langchain-google-genai==2.0.7
+langchain-openai==0.2.14
+langchain-anthropic==0.3.1
+langchain-ollama==0.2.2
+tiktoken==0.8.0
+
+# Storage
+boto3==1.35.88
+aiobotocore==2.15.2
+
+# Utilities
+python-dotenv==1.0.1
+structlog==24.4.0
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+tenacity==9.0.0
+shortuuid==1.0.13
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.28.1
+factory-boy==3.3.1
+
+# Linting
+ruff==0.8.4
+mypy==1.13.3
